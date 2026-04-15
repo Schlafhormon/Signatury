@@ -1,0 +1,37 @@
+{
+  "TemplateRootPath": "\\\\fileserver\\Signatury\\Templates",
+  "CachePath": "%LOCALAPPDATA%\\Signatury\\Cache",
+  "LogPath": "%LOCALAPPDATA%\\Signatury\\Logs",
+  "TempPath": "%LOCALAPPDATA%\\Signatury\\Temp",
+  "StatePath": "%LOCALAPPDATA%\\Signatury\\State",
+  "SignatureOutputPath": "%APPDATA%\\Microsoft\\Signatures",
+  "TemplateFileName": "DK_Standard.docx",
+  "SignatureName": "DK_Standard",
+  "SetAsDefaultForNew": true,
+  "SetAsDefaultForReplyForward": true,
+  "CreateTxt": true,
+  "CreateRtf": true,
+  "CleanupOldSignatureFiles": true,
+  "OptionalRemoveEmptyLines": true,
+  "OptionalLineCleanupPatterns": [
+    "^\\s*$",
+    "^Telefon:\\s*$",
+    "^E-Mail:\\s*$"
+  ],
+  "DisableRoamingSignatures": true,
+  "VariableMappings": {
+    "$CurrentUserGivenName$": "givenName",
+    "$CurrentUserSurname$": "sn",
+    "$CurrentUserTitle$": "title",
+    "$CurrentUserTelephone$": "telephoneNumber",
+    "$CurrentUserMail$": "mail"
+  },
+  "VariableOverrides": {
+  },
+  "Templates": [
+    {
+      "TemplateFileName": "DK_Standard.docx",
+      "SignatureName": "DK_Standard"
+    }
+  ]
+}

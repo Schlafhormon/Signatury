@@ -1,0 +1,10 @@
+.git/
+.github/.cache/
+Temp/
+Logs/
+*.log
+Thumbs.db
+.DS_Store
+*.tmp
+*.bak
+*.swp
