@@ -9,6 +9,9 @@
   "SignatureName": "DK_Standard",
   "SetAsDefaultForNew": true,
   "SetAsDefaultForReplyForward": true,
+  "WriteDefaultsToMailSettings": true,
+  "WriteDefaultsToProfileAccounts": true,
+  "ResetManagedStateBeforeDeploy": false,
   "CreateTxt": true,
   "CreateRtf": true,
   "CleanupOldSignatureFiles": true,
@@ -31,7 +34,9 @@
   "Templates": [
     {
       "TemplateFileName": "DK_Standard.docx",
-      "SignatureName": "DK_Standard"
+      "SignatureName": "DK_Standard",
+      "WriteDefaultsToMailSettings": true,
+      "WriteDefaultsToProfileAccounts": true
     }
   ]
 }

@@ -74,6 +74,29 @@ function Get-StringValue {
     return [string]$Value
 }
 
+function Get-ObjectPropertyValue {
+    [CmdletBinding()]
+    param(
+        $InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName,
+
+        $Default = $null
+    )
+
+    if ($null -eq $InputObject) {
+        return $Default
+    }
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return $Default
+    }
+
+    return $property.Value
+}
+
 function Get-BoolValue {
     [CmdletBinding()]
     param(
@@ -150,6 +173,9 @@ function Import-OutlookSignatureConfiguration {
         SignatureName                  = Get-StringValue $config.SignatureName 'DK_Standard'
         SetAsDefaultForNew             = Get-BoolValue $config.SetAsDefaultForNew $true
         SetAsDefaultForReplyForward    = Get-BoolValue $config.SetAsDefaultForReplyForward $true
+        WriteDefaultsToMailSettings    = Get-BoolValue $config.WriteDefaultsToMailSettings $true
+        WriteDefaultsToProfileAccounts = Get-BoolValue $config.WriteDefaultsToProfileAccounts $true
+        ResetManagedStateBeforeDeploy  = Get-BoolValue $config.ResetManagedStateBeforeDeploy $false
         CreateTxt                      = Get-BoolValue $config.CreateTxt $true
         CreateRtf                      = Get-BoolValue $config.CreateRtf $true
         CleanupOldSignatureFiles       = Get-BoolValue $config.CleanupOldSignatureFiles $true
@@ -358,6 +384,8 @@ function Get-SignatureTemplateDefinitions {
                 SignatureName               = Get-StringValue -Value $template.SignatureName -Default $Configuration.SignatureName
                 SetAsDefaultForNew          = if ($template.Contains('SetAsDefaultForNew')) { Get-BoolValue -Value $template.SetAsDefaultForNew -Default $Configuration.SetAsDefaultForNew } else { $Configuration.SetAsDefaultForNew }
                 SetAsDefaultForReplyForward = if ($template.Contains('SetAsDefaultForReplyForward')) { Get-BoolValue -Value $template.SetAsDefaultForReplyForward -Default $Configuration.SetAsDefaultForReplyForward } else { $Configuration.SetAsDefaultForReplyForward }
+                WriteDefaultsToMailSettings = if ($template.Contains('WriteDefaultsToMailSettings')) { Get-BoolValue -Value $template.WriteDefaultsToMailSettings -Default $Configuration.WriteDefaultsToMailSettings } else { $Configuration.WriteDefaultsToMailSettings }
+                WriteDefaultsToProfileAccounts = if ($template.Contains('WriteDefaultsToProfileAccounts')) { Get-BoolValue -Value $template.WriteDefaultsToProfileAccounts -Default $Configuration.WriteDefaultsToProfileAccounts } else { $Configuration.WriteDefaultsToProfileAccounts }
                 CreateTxt                   = if ($template.Contains('CreateTxt')) { Get-BoolValue -Value $template.CreateTxt -Default $Configuration.CreateTxt } else { $Configuration.CreateTxt }
                 CreateRtf                   = if ($template.Contains('CreateRtf')) { Get-BoolValue -Value $template.CreateRtf -Default $Configuration.CreateRtf } else { $Configuration.CreateRtf }
                 CleanupOldSignatureFiles    = if ($template.Contains('CleanupOldSignatureFiles')) { Get-BoolValue -Value $template.CleanupOldSignatureFiles -Default $Configuration.CleanupOldSignatureFiles } else { $Configuration.CleanupOldSignatureFiles }
@@ -374,6 +402,8 @@ function Get-SignatureTemplateDefinitions {
             SignatureName               = $Configuration.SignatureName
             SetAsDefaultForNew          = $Configuration.SetAsDefaultForNew
             SetAsDefaultForReplyForward = $Configuration.SetAsDefaultForReplyForward
+            WriteDefaultsToMailSettings = $Configuration.WriteDefaultsToMailSettings
+            WriteDefaultsToProfileAccounts = $Configuration.WriteDefaultsToProfileAccounts
             CreateTxt                   = $Configuration.CreateTxt
             CreateRtf                   = $Configuration.CreateRtf
             CleanupOldSignatureFiles    = $Configuration.CleanupOldSignatureFiles
@@ -687,6 +717,100 @@ function Remove-SignatureOutput {
         if (Test-Path -LiteralPath $path) {
             Remove-Item -LiteralPath $path -Recurse -Force
             Write-SignatureLog -LogFilePath $LogFilePath -Level DEBUG -Message ("Vorhandene Signaturdatei entfernt: {0}" -f $path)
+        }
+    }
+}
+
+function Reset-SignaturyManagedState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Configuration,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable[]]$TemplateDefinitions,
+
+        [Parameter(Mandatory = $true)]
+        [string]$LogFilePath
+    )
+
+    Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message 'Reset der von Signatury verwalteten Outlook- und Signaturzustände wurde angefordert.'
+
+    $signatureNames = @($TemplateDefinitions | ForEach-Object { [string]$_.SignatureName } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+
+    foreach ($templateDefinition in $TemplateDefinitions) {
+        Remove-SignatureOutput -Configuration $Configuration -TemplateDefinition $templateDefinition -LogFilePath $LogFilePath
+
+        $statePath = Get-SignatureStateFilePath -Configuration $Configuration -TemplateDefinition $templateDefinition
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            Remove-Item -LiteralPath $statePath -Force
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Statusdatei entfernt: {0}" -f $statePath)
+        }
+
+        $cacheTemplatePath = Join-Path -Path (Join-Path -Path $Configuration.CachePath -ChildPath 'Templates') -ChildPath $templateDefinition.TemplateFileName
+        if (Test-Path -LiteralPath $cacheTemplatePath -PathType Leaf) {
+            Remove-Item -LiteralPath $cacheTemplatePath -Force
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Vorlagen-Cache entfernt: {0}" -f $cacheTemplatePath)
+        }
+    }
+
+    $officeVersion = Get-InstalledOutlookOfficeVersion
+    if ([string]::IsNullOrWhiteSpace($officeVersion)) {
+        Write-SignatureLog -LogFilePath $LogFilePath -Level WARN -Message 'Kein unterstütztes Outlook im Benutzerprofil gefunden. Registry-Reset wird übersprungen.'
+        return
+    }
+
+    $setupPath = 'HKCU:\Software\Microsoft\Office\{0}\Outlook\Setup' -f $officeVersion
+    foreach ($propertyName in @('DisableRoamingSignatures', 'DisableRoamingSignaturesTemporaryToggle')) {
+        Remove-ItemProperty -LiteralPath $setupPath -Name $propertyName -ErrorAction SilentlyContinue
+    }
+    Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Roaming-Signature-Schalter für Outlook {0} wurden zurückgesetzt." -f $officeVersion)
+
+    $mailSettingsPath = 'HKCU:\Software\Microsoft\Office\{0}\Common\MailSettings' -f $officeVersion
+    if (Test-Path -LiteralPath $mailSettingsPath) {
+        $mailSettings = Get-ItemProperty -LiteralPath $mailSettingsPath -ErrorAction SilentlyContinue
+        if ($mailSettings) {
+            $newSignature = Get-StringValue -Value (Get-ObjectPropertyValue -InputObject $mailSettings -PropertyName 'NewSignature')
+            $replySignature = Get-StringValue -Value (Get-ObjectPropertyValue -InputObject $mailSettings -PropertyName 'ReplySignature')
+
+            if ($signatureNames -contains $newSignature) {
+                Remove-ItemProperty -LiteralPath $mailSettingsPath -Name 'NewSignature' -ErrorAction SilentlyContinue
+                Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message 'Common\MailSettings\NewSignature wurde zurückgesetzt.'
+            }
+
+            if ($signatureNames -contains $replySignature) {
+                Remove-ItemProperty -LiteralPath $mailSettingsPath -Name 'ReplySignature' -ErrorAction SilentlyContinue
+                Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message 'Common\MailSettings\ReplySignature wurde zurückgesetzt.'
+            }
+        }
+    }
+
+    $profileConfiguration = Get-OutlookProfileConfiguration -OfficeVersion $officeVersion
+    if ($null -eq $profileConfiguration -or -not (Test-Path -LiteralPath $profileConfiguration.AccountsRoot)) {
+        Write-SignatureLog -LogFilePath $LogFilePath -Level WARN -Message ("Outlook-Profilpfad für Reset nicht gefunden: {0}" -f $officeVersion)
+        return
+    }
+
+    $accountKeys = Get-ChildItem -LiteralPath $profileConfiguration.AccountsRoot -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.PSChildName -match '^[0-9A-F]{8}$' }
+
+    foreach ($accountKey in $accountKeys) {
+        $properties = Get-ItemProperty -LiteralPath $accountKey.PSPath -ErrorAction SilentlyContinue
+        if ($null -eq $properties) {
+            continue
+        }
+
+        $profileNewSignature = Get-StringValue -Value (Get-ObjectPropertyValue -InputObject $properties -PropertyName 'New Signature')
+        $profileReplySignature = Get-StringValue -Value (Get-ObjectPropertyValue -InputObject $properties -PropertyName 'Reply-Forward Signature')
+
+        if ($signatureNames -contains $profileNewSignature) {
+            Remove-ItemProperty -LiteralPath $accountKey.PSPath -Name 'New Signature' -ErrorAction SilentlyContinue
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Profilpfad zurückgesetzt (New Signature): {0}" -f $accountKey.Name)
+        }
+
+        if ($signatureNames -contains $profileReplySignature) {
+            Remove-ItemProperty -LiteralPath $accountKey.PSPath -Name 'Reply-Forward Signature' -ErrorAction SilentlyContinue
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Profilpfad zurückgesetzt (Reply-Forward Signature): {0}" -f $accountKey.Name)
         }
     }
 }
@@ -1026,7 +1150,7 @@ function Get-OutlookProfileConfiguration {
     }
 
     $outlookProperties = Get-ItemProperty -LiteralPath $outlookRoot -ErrorAction SilentlyContinue
-    $defaultProfile = Get-StringValue -Value $outlookProperties.DefaultProfile
+    $defaultProfile = Get-StringValue -Value (Get-ObjectPropertyValue -InputObject $outlookProperties -PropertyName 'DefaultProfile')
     if ([string]::IsNullOrWhiteSpace($defaultProfile)) {
         return $null
     }
@@ -1065,19 +1189,29 @@ function Set-OutlookDefaultSignature {
         Disable-OutlookRoamingSignatures -OfficeVersion $officeVersion -LogFilePath $LogFilePath
     }
 
-    $mailSettingsPath = 'HKCU:\Software\Microsoft\Office\{0}\Common\MailSettings' -f $officeVersion
-    if (-not (Test-Path -LiteralPath $mailSettingsPath)) {
-        [void](New-Item -Path $mailSettingsPath -Force)
+    if ($TemplateDefinition.WriteDefaultsToMailSettings) {
+        $mailSettingsPath = 'HKCU:\Software\Microsoft\Office\{0}\Common\MailSettings' -f $officeVersion
+        if (-not (Test-Path -LiteralPath $mailSettingsPath)) {
+            [void](New-Item -Path $mailSettingsPath -Force)
+        }
+
+        if ($TemplateDefinition.SetAsDefaultForNew) {
+            New-ItemProperty -LiteralPath $mailSettingsPath -Name 'NewSignature' -PropertyType String -Value $TemplateDefinition.SignatureName -Force | Out-Null
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Standard-Signatur für neue Nachrichten in MailSettings gesetzt: {0}" -f $TemplateDefinition.SignatureName)
+        }
+
+        if ($TemplateDefinition.SetAsDefaultForReplyForward) {
+            New-ItemProperty -LiteralPath $mailSettingsPath -Name 'ReplySignature' -PropertyType String -Value $TemplateDefinition.SignatureName -Force | Out-Null
+            Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Standard-Signatur für Antworten/Weiterleitungen in MailSettings gesetzt: {0}" -f $TemplateDefinition.SignatureName)
+        }
+    }
+    else {
+        Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message 'Schreiben der Outlook-Standardsignatur in Common\\MailSettings ist per Konfiguration deaktiviert.'
     }
 
-    if ($TemplateDefinition.SetAsDefaultForNew) {
-        New-ItemProperty -LiteralPath $mailSettingsPath -Name 'NewSignature' -PropertyType String -Value $TemplateDefinition.SignatureName -Force | Out-Null
-        Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Standard-Signatur für neue Nachrichten in MailSettings gesetzt: {0}" -f $TemplateDefinition.SignatureName)
-    }
-
-    if ($TemplateDefinition.SetAsDefaultForReplyForward) {
-        New-ItemProperty -LiteralPath $mailSettingsPath -Name 'ReplySignature' -PropertyType String -Value $TemplateDefinition.SignatureName -Force | Out-Null
-        Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message ("Standard-Signatur für Antworten/Weiterleitungen in MailSettings gesetzt: {0}" -f $TemplateDefinition.SignatureName)
+    if (-not $TemplateDefinition.WriteDefaultsToProfileAccounts) {
+        Write-SignatureLog -LogFilePath $LogFilePath -Level INFO -Message 'Schreiben der Outlook-Standardsignatur in die Profil-Kontenschlüssel ist per Konfiguration deaktiviert.'
+        return
     }
 
     $profileConfiguration = Get-OutlookProfileConfiguration -OfficeVersion $officeVersion
@@ -1148,15 +1282,21 @@ function Invoke-OutlookSignatureDeployment {
         Write-SignatureLog -LogFilePath $logFilePath -Level INFO -Message ("Benutzer: {0} | Domäne: {1} | SID: {2}" -f $userContext.UserName, $userContext.UserDomain, $userContext.UserSid)
         Write-SignatureLog -LogFilePath $logFilePath -Level INFO -Message ("Konfiguration geladen: {0}" -f $configuration.ConfigPath)
 
-        $variableValues = Resolve-SignatureVariables -Configuration $configuration -LogFilePath $logFilePath
         $templateDefinitions = Get-SignatureTemplateDefinitions -Configuration $configuration
+        $effectiveForceRefresh = [bool]($ForceRefresh -or $configuration.ResetManagedStateBeforeDeploy)
+
+        if ($configuration.ResetManagedStateBeforeDeploy) {
+            Reset-SignaturyManagedState -Configuration $configuration -TemplateDefinitions $templateDefinitions -LogFilePath $logFilePath
+        }
+
+        $variableValues = Resolve-SignatureVariables -Configuration $configuration -LogFilePath $logFilePath
 
         foreach ($templateDefinition in $templateDefinitions) {
             Write-SignatureLog -LogFilePath $logFilePath -Level INFO -Message ("Verarbeite Vorlage '{0}' als Signatur '{1}'." -f $templateDefinition.TemplateFileName, $templateDefinition.SignatureName)
-            $templateInfo = Sync-TemplateToCache -Configuration $configuration -TemplateDefinition $templateDefinition -LogFilePath $logFilePath -ForceRefresh:$ForceRefresh
+            $templateInfo = Sync-TemplateToCache -Configuration $configuration -TemplateDefinition $templateDefinition -LogFilePath $logFilePath -ForceRefresh:$effectiveForceRefresh
             $fingerprint = Get-SignatureFingerprint -TemplateDefinition $templateDefinition -VariableValues $variableValues -TemplateHash $templateInfo.TemplateHash
 
-            if ($ForceRefresh -or (Test-SignatureRefreshRequired -Configuration $configuration -TemplateDefinition $templateDefinition -Fingerprint $fingerprint)) {
+            if ($effectiveForceRefresh -or (Test-SignatureRefreshRequired -Configuration $configuration -TemplateDefinition $templateDefinition -Fingerprint $fingerprint)) {
                 Write-SignatureLog -LogFilePath $logFilePath -Level INFO -Message ("Aktualisierung erforderlich für Signatur '{0}'." -f $templateDefinition.SignatureName)
                 $generatedFiles = Invoke-WordSignatureGeneration -Configuration $configuration -TemplateDefinition $templateDefinition -TemplatePath $templateInfo.CachedTemplatePath -VariableValues $variableValues -LogFilePath $logFilePath
                 Save-SignatureState -Configuration $configuration -TemplateDefinition $templateDefinition -Fingerprint $fingerprint -TemplateHash $templateInfo.TemplateHash -VariableValues $variableValues -GeneratedFiles $generatedFiles

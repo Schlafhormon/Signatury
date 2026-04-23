@@ -105,6 +105,23 @@ Optional:
 .\Scripts\Deploy-OutlookSignature.ps1 -ForceRefresh
 ```
 
+If your Outlook environment reacts badly to direct profile writes, you can keep default-signature updates limited to `Common\MailSettings` by setting the following configuration flags:
+
+```json
+"WriteDefaultsToMailSettings": true,
+"WriteDefaultsToProfileAccounts": false
+```
+
+`WriteDefaultsToProfileAccounts` controls whether Signatury writes `New Signature` and `Reply-Forward Signature` into the Outlook profile account keys. In some environments this is useful for stubborn Outlook profiles, but it can also make the Signatures dialog behave unexpectedly.
+
+You can also force a "clean" managed rerun before deployment:
+
+```json
+"ResetManagedStateBeforeDeploy": true
+```
+
+This removes Signatury-managed signature output, state files, cached template copies, and managed Outlook default-signature values before the new deployment run starts. It is useful as a recovery option if an earlier run left Outlook in an inconsistent state, but it also forces regeneration on every run while enabled.
+
 ## Rollout
 
 For enterprise rollout, switch the local paths in the configuration to central UNC paths and place cache/log/temp/state folders under `%LOCALAPPDATA%\Signatury`.
@@ -116,6 +133,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\fileserver\Signatury\
 ```
 
 An enterprise-ready example configuration is included in [Config/signature-config.enterprise.example.json](Config/signature-config.enterprise.example.json).
+
+The Outlook-default behavior is now configurable:
+
+- `WriteDefaultsToMailSettings`: writes the default signature to `HKCU\Software\Microsoft\Office\<Version>\Common\MailSettings`
+- `WriteDefaultsToProfileAccounts`: writes the default signature into the detected Outlook profile account keys
+- `ResetManagedStateBeforeDeploy`: removes Signatury-managed output and Outlook default-signature state before starting a fresh run
+- `DisableRoamingSignatures`: controls whether local signatures are enforced through Outlook's roaming-signature toggle
 
 ## Logging and Idempotency
 

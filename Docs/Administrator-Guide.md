@@ -25,6 +25,43 @@ Beispiel:
 "$CurrentUserDepartment$": "department"
 ```
 
+## Outlook-Defaultwerte feinsteuern
+
+Seit der aktuellen Version können die Outlook-Schreibpfade getrennt gesteuert werden:
+
+- `WriteDefaultsToMailSettings`: schreibt `NewSignature` und `ReplySignature` nach `HKCU\Software\Microsoft\Office\<Version>\Common\MailSettings`
+- `WriteDefaultsToProfileAccounts`: schreibt `New Signature` und `Reply-Forward Signature` zusätzlich in das erkannte Outlook-Profil
+
+Empfehlung für Umgebungen, in denen der Outlook-Signaturdialog nach dem Rollout nicht mehr bearbeitbar ist:
+
+```json
+"WriteDefaultsToMailSettings": true,
+"WriteDefaultsToProfileAccounts": false,
+"DisableRoamingSignatures": false
+```
+
+Damit werden die Signaturdateien weiterhin erzeugt und die Standardsignatur in `Common\MailSettings` gesetzt, aber die aggressiveren Profil-Account-Änderungen bleiben aus.
+
+## Verwalteten Zustand vor einem Lauf zurücksetzen
+
+Mit `ResetManagedStateBeforeDeploy` kann Signatury vor dem eigentlichen Lauf einen verwalteten "Frischstart" erzwingen.
+
+```json
+"ResetManagedStateBeforeDeploy": true
+```
+
+Dabei entfernt Signatury vor dem neuen Lauf:
+
+- bereits erzeugte Signaturdateien der konfigurierten Signaturnamen
+- zugehörige Asset-Ordner
+- Statusdateien für Fingerprints
+- lokale Cache-Kopien der betroffenen Vorlagen
+- von Signatury gesetzte Outlook-Defaultwerte in `Common\MailSettings`
+- von Signatury gesetzte `New Signature`- und `Reply-Forward Signature`-Werte im Outlook-Profil
+- `DisableRoamingSignatures`-Schalter im Outlook-Setup
+
+Das ist besonders hilfreich als Recovery-Option nach einem fehlerhaften Rollout. Solange der Schalter aktiv ist, wird allerdings bei jedem Lauf bewusst ein vollständiger Neuaufbau erzwungen.
+
 ## Nur lokal testen
 
 Lokal ohne Profiländerung:

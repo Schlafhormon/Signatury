@@ -77,12 +77,33 @@ Wichtige Konfigurationsschlüssel:
 - `SignatureOutputPath`: Outlook-Signaturordner
 - `TemplateFileName`: Standardvorlage
 - `SignatureName`: Standardname der Outlook-Signatur
+- `WriteDefaultsToMailSettings`: schreibt Outlook-Standardwerte nach `Common\MailSettings`
+- `WriteDefaultsToProfileAccounts`: schreibt Outlook-Standardwerte zusätzlich direkt in die Profil-Kontenschlüssel
+- `ResetManagedStateBeforeDeploy`: setzt von Signatury verwaltete Dateien und Outlook-Defaultwerte vor dem Lauf zurück
 - `VariableMappings`: Mapping Platzhalter zu AD-Attributen
 - `VariableOverrides`: optionale lokale Fallbackwerte für Offline-Tests
 - `OptionalLineCleanupPatterns`: Regex-Muster für das Entfernen leerer oder halbleerer Zeilen
 - `Templates`: optionaler Einstieg für mehrere Vorlagen
 
 Relative Pfade wie `.\Templates` werden bewusst relativ zum Projektstamm und nicht relativ zur JSON-Datei aufgelöst.
+
+Wenn Outlook nach einem Rollout die Signaturverwaltung nicht mehr editierbar anzeigt, empfiehlt sich häufig folgende Konfiguration:
+
+```json
+"WriteDefaultsToMailSettings": true,
+"WriteDefaultsToProfileAccounts": false,
+"DisableRoamingSignatures": false
+```
+
+Damit setzt Signatury die Standardsignatur nur noch über `Common\MailSettings` und greift nicht mehr in die kontospezifischen Profilwerte ein.
+
+Wenn ein vorheriger Rollout Outlook in einen inkonsistenten Zustand gebracht hat, kann zusätzlich folgender Schalter verwendet werden:
+
+```json
+"ResetManagedStateBeforeDeploy": true
+```
+
+Damit entfernt Signatury vor dem neuen Lauf seine verwalteten Signaturdateien, Statusdateien, Cache-Kopien und Outlook-Defaultwerte und verhält sich dadurch wie ein bewusst erzwungener Frischstart.
 
 ## Platzhalter
 
@@ -170,7 +191,7 @@ Empfohlene Parameter der Aufgabe:
 6. Nur bei Änderungen neu generieren
 7. DOCX in Word öffnen, Platzhalter ersetzen und leere Zeilen bereinigen
 8. Signatur als `.htm`, `.txt` und optional `.rtf` exportieren
-9. Outlook-Standardwerte in `Common\MailSettings` und im Standardprofil setzen
+9. Outlook-Standardwerte je nach Konfiguration in `Common\MailSettings` und optional im Standardprofil setzen
 
 ## Logging
 
@@ -223,6 +244,8 @@ Im Log stehen unter anderem:
 - Profilpfad unter `HKCU:\Software\Microsoft\Office\<Version>\Outlook` prüfen
 - Outlook nach Änderung einmal neu starten
 - Prüfen, ob der Benutzer mehrere Profile hat und welches Profil `DefaultProfile` ist
+- Falls der Outlook-Signaturdialog danach nicht mehr bearbeitbar ist, `WriteDefaultsToProfileAccounts` testweise auf `false` setzen
+- Für einen erzwungenen Neuaufbau kann zusätzlich `ResetManagedStateBeforeDeploy` auf `true` gesetzt werden
 
 ### Bilder fehlen in der HTML-Signatur
 
